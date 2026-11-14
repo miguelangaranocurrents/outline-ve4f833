@@ -9,11 +9,7 @@ import {
   runInAction,
 } from "mobx";
 import type { DirectionFilter, SortFilter } from "@shared/types";
-import {
-  AttachmentPreset,
-  SubscriptionType,
-  type DateFilter,
-} from "@shared/types";
+import { SubscriptionType, type DateFilter } from "@shared/types";
 import type { Filter } from "@shared/helpers/FilterHelper";
 import { subtractDate } from "@shared/utils/date";
 import { bytesToHumanReadable } from "@shared/utils/files";
@@ -29,7 +25,7 @@ import type {
   SearchResult,
 } from "~/types";
 import { client } from "~/utils/ApiClient";
-import { extname, uploadFile } from "~/utils/files";
+import { extname } from "~/utils/files";
 
 type FetchPageParams = PaginationParams & {
   template?: boolean;
@@ -602,23 +598,24 @@ export default class DocumentsStore extends Store<Document> {
       );
     }
 
-    const attachment = await uploadFile(file, {
-      name: file.name,
-      preset: AttachmentPreset.Import,
-    });
+    // The file is posted directly to documents.import rather than being staged
+    // as an Import attachment, as that attachment preset is restricted to team
+    // admins while importing into a collection is available to members.
+    const formData = new FormData();
+    formData.append("file", file, file.name);
+    if (collectionId) {
+      formData.append("collectionId", collectionId);
+    }
+    if (parentDocumentId) {
+      formData.append("parentDocumentId", parentDocumentId);
+    }
+    if (options.publish !== undefined) {
+      formData.append("publish", String(options.publish));
+    }
 
-    const res = await client.post(
-      "/documents.import",
-      {
-        attachmentId: attachment.id,
-        parentDocumentId,
-        collectionId,
-        publish: options.publish,
-      },
-      {
-        retry: false,
-      }
-    );
+    const res = await client.post("/documents.import", formData, {
+      retry: false,
+    });
     invariant(res?.data, "Data should be available");
     this.addPolicies(res.policies);
     return this.add(res.data);
